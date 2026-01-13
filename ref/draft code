@@ -1,0 +1,91 @@
+import pandas as pd
+import requests
+from bs4 import BeautifulSoup
+from pyspark.sql.functions import col, pandas_udf
+from pyspark.sql.types import StringType
+from transformers import pipeline
+import torch
+
+#Lexicon Definition Mapping Team names to Anchor Words
+mmo_lexicon = {
+    "Compliance": "Compliance, enforcement, fishing offences, fines, boarding inspections, illegal activity, Blue Book rules",
+    "Fishing vessel licensing Team (FVL)": "Fishing vessel licensing, vessel registration, boat permits, vessel capacity, over 10 metre, under 10 metre",
+    "Marine Planning": "Marine Planning, regional plans, seascape, offshore and inshore plan areas, statement of public participation",
+    "IIU": "IUU, Illegal Unreported and Unregulated fishing, catch certificates, processing statements, storage documents, fish exports",
+    "SIA – single issuance authority": "SIA, Single Issuance Authority, foreign vessel permits, UK vessels in EU waters, fishing authorizations",
+    "Planning Team": "Planning team, marine plan development, coastal concordat, decision making workshops",
+    "Conservative team": "Marine Conservation, Marine Protected Areas (MPA), byelaws, wildlife licences, MCZ, species protection",
+    "OMT": "Offshore Monitoring Team, Operational Management Team, coastal operations, day-to-day marine management",
+    "IVMS Team": "IVMS, Inshore Vessel Monitoring System, tracking devices, under 12 metre vessels, GPS positioning",
+    "Corporate team – CSR risk": "Corporate, Strategic Plan, CSR risk, annual reports, privacy notices, transparency, National Fraud Initiative",
+    "Stats – Sea fisheries": "Stats, sea fisheries statistics, landings data, catch recording analysis, statistical quality assessment",
+    "Comms – team": "Communications, newsletters, Sea Views magazine, news announcements, press releases",
+    "Funding": "Funding, grants, Maritime and Fisheries Fund (MFF), European Maritime and Fisheries Fund (EMFF), Seafood Fund, financial support",
+    "Global Marine Team": "Global Marine, Blue Belt Programme, international marine protection, overseas territories",
+    "FMT": "FMT, Fisheries Management Team, quota management, catch limits, discard ban, landing obligation",
+    "FDST": "FDST, Fisheries Data and Systems Team, logbooks, electronic reporting (ERS), sales notes, data collection framework",
+    "Marine Licensing": "Marine Licensing, dredging, construction, burial at sea, offshore energy, environmental impact assessment"
+}
+
+#Function to scrape GOV.UK Summary (The 'Context')
+def get_gov_summary(url):
+    try:
+        response = requests.get(url, timeout=5)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        # GOV.UK usually puts the summary in a meta tag or the first paragraph
+        description = soup.find("meta", {"name": "description"})
+        if description:
+            return description["content"]
+        return ""
+    except:
+        return ""
+
+# Load parquet
+# Assuming your file is uploaded to DBFS
+df = spark.read.format("csv").option("header", "true").load("/FileStore/tables/text.csv")
+
+# Convert to Pandas for the scraping part 
+pdf = df.toPandas()
+print("Fetching page summaries for better context...")
+pdf['Summary'] = pdf['URL'].apply(get_gov_summary)
+pdf['Text_For_Model'] = pdf['Title'] + " " + pdf['Summary']
+
+# Convert file back  to Spark
+spark_df = spark.createDataFrame(pdf)
+
+# Zero-Shot Classification via Pandas UDF
+@pandas_udf(StringType())
+def classify_publications_udf(texts: pd.Series) -> pd.Series:
+    # Initialize the pipeline inside the UDF so it's loaded on each worker
+    # Use GPU (device=0) if your cluster has it, else -1 for CPU
+    device = 0 if torch.cuda.is_available() else -1
+    classifier = pipeline("zero-shot-classification", 
+                          model="facebook/bart-large-mnli", 
+                          device=device)
+    
+    candidate_labels = list(mmo_lexicon.values())
+    
+    results = []
+    for text in texts:
+        if not text or len(text.strip()) < 5:
+            results.append("Unclassified")
+            continue
+            
+        output = classifier(text, candidate_labels, multi_label=False)
+        best_label = output['labels'][0]
+        
+        # Map the long description back to the original Team Name
+        original_team = [k for k, v in mmo_lexicon.items() if v == best_label][0]
+        results.append(original_team)
+        
+    return pd.Series(results)
+
+# Run the classification
+print("Running Transformer model classification...")
+final_df = spark_df.withColumn("Assigned_Department", classify_publications_udf(col("Text_For_Model")))
+
+# Show results
+display(final_df.select("Title", "Assigned_Department"))
+
+# Optional: Save results
+# final_df.write.mode("overwrite").parquet("/mnt/mmo/classified_publications")
