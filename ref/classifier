@@ -27,7 +27,7 @@ mmo_lexicon = {
     "Marine Licensing": "Marine Licensing, dredging, construction, burial at sea, offshore energy, environmental impact assessment"
 }
 
-#Function to scrape GOV.UK Summary (The 'Context')
+#Fetch GOV.UK Summary ('Context')
 def get_gov_summary(url):
     try:
         response = requests.get(url, timeout=5)
@@ -41,16 +41,27 @@ def get_gov_summary(url):
         return ""
 
 # Load parquet
-# Assuming your file is uploaded to DBFS
-df = spark.read.format("csv").option("header", "true").load("/FileStore/tables/text.csv")
+df = spark.read.parquet('/mnt/lab/unrestricted/muhammed.njie@marinemanagement.org.uk/published/mmo_published_guidance.parquet')
 
-# Convert to Pandas for the scraping part 
+# Convert to Pandas for scraping 
 pdf = df.toPandas()
-print("Fetching page summaries for better context...")
-pdf['Summary'] = pdf['URL'].apply(get_gov_summary)
-pdf['Text_For_Model'] = pdf['Title'] + " " + pdf['Summary']
+print("Available columns:", pdf.columns.tolist())
 
-# Convert file back  to Spark
+# Check if required columns exist
+if 'URL' in pdf.columns:
+    print("Fetching page summaries for better context...")
+    pdf['Summary'] = pdf['URL'].apply(get_gov_summary)
+else:
+    print("Warning: 'URL' column not found. Using empty summary.")
+    pdf['Summary'] = ""
+
+if 'Title' in pdf.columns:
+    pdf['Text_For_Model'] = pdf['Title'] + " " + pdf['Summary']
+else:
+    print("Warning: 'Title' column not found. Using only summary.")
+    pdf['Text_For_Model'] = pdf['Summary']
+
+# Convert file back  to Spark for Transformer and classification Models
 spark_df = spark.createDataFrame(pdf)
 
 # Zero-Shot Classification via Pandas UDF
@@ -85,7 +96,7 @@ print("Running Transformer model classification...")
 final_df = spark_df.withColumn("Assigned_Department", classify_publications_udf(col("Text_For_Model")))
 
 # Show results
-display(final_df.select("Title", "Assigned_Department"))
+#display(final_df.select("PAR1", "Assigned_Department"))
 
-# Optional: Save results
-# final_df.write.mode("overwrite").parquet("/mnt/mmo/classified_publications")
+# Save results
+final_df.write.mode("overwrite").parquet("/mnt/lab/unrestricted/muhammed.njie@marinemanagement.org.uk/published/classified_publications.parquet")
