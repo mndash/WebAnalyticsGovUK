@@ -57,7 +57,7 @@ mmo_lexicon = {
     "Compliance": "compliance enforcement offences fines inspection illegal logbooks catch record",
     "FVL": "fishing vessel licence under10 over10 registration capacity permit",
     "Marine Planning": "marine planning regional plans seascape spatial plan spp",
-    "IIU": "illegal unreported unregulated iuu catch certificate processing statement storage export",
+    "IUU": "illegal unreported unregulated iuu catch certificate processing statement storage export",
     "SIA": "single issuance authority foreign vessel permit eu waters authorisation",
     "Planning Team": "coastal concordat plan development workshops decision making",
     "Conservative team": "protected area mpa mcz wildlife byelaw conservation species",
@@ -161,7 +161,7 @@ def load_cache(cache_path: str) -> pd.DataFrame:
     if _dbfs_exists(cache_path):
         print("[CACHE] Loading existing GOV.UK summary cache...")
         try:
-            return pd.read_parquet(cache_path)
+            return pd.read_parquet(f"/dbfs{cache_path}")
         except Exception as e:
             print(f"[CACHE][WARN] Failed to read cache ({e}). Starting fresh.")
             return pd.DataFrame(columns=["URL", "Summary", "Last_Scraped"])
@@ -286,7 +286,12 @@ updated_cache_df = pd.DataFrame({
     "Last_Scraped": datetime.utcnow().isoformat()
 })
 updated_cache_df = updated_cache_df.drop_duplicates(subset=["URL"])
-updated_cache_df.to_parquet(CACHE_PATH, index=False)
+
+# Ensure the directory exists before writing
+cache_dir = os.path.dirname(f"/dbfs{CACHE_PATH}")
+os.makedirs(cache_dir, exist_ok=True)
+
+updated_cache_df.to_parquet(f"/dbfs{CACHE_PATH}", index=False)
 print("[CACHE] Cache saved:", CACHE_PATH)
 
 # Back to Spark
