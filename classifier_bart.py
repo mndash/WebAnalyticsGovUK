@@ -5,7 +5,6 @@
 # - Structured outputs
 # - Relaxed thresholds
 # - Review flags
-# - Verbose print statements
 # - Persistent GOV.UK URL→Summary cache
 # ============================================================
 
@@ -23,7 +22,7 @@ from pyspark.sql.types import StructType, StructField, StringType, FloatType
 from transformers import pipeline
 
 # ============================================================
-# 0. CONFIG: Paths (adjust if you prefer a different location)
+#================== 0. CONFIG: Paths ========================#
 # ============================================================
 INPUT_PARQUET = (
     "/mnt/lab/unrestricted/muhammed.njie@marinemanagement.org.uk/published/"
@@ -44,27 +43,27 @@ print("[INFO] Cache parquet :", CACHE_PATH)
 
 
 # ============================================================
-# 1. MMO Domain Lexicon (Short labels only)
+#================== 1. MMO Domain Lexicon ===================#
 # ============================================================
 mmo_lexicon = {
-    "Compliance": "compliance enforcement offences fines inspection illegal blue book catch record logbook sales notes",
-    "FVL": "fishing vessel licence under10 over10 vessel registration permit capacity",
-    "Marine Planning": "marine planning regional plans seascape plan area spp",
-    "IIU": "illegal unreported unregulated iuu catch certificate processing statement storage document export",
-    "SIA": "single issuance authority foreign vessel permit authorization eu waters",
-    "Planning Team": "coastal concordat marine plan development workshops decision making",
-    "Conservative team": "protected area mpa mcz wildlife byelaw conservation",
-    "OMT": "operations coastal day to day management deployment monitoring",
-    "IVMS": "ivms tracking monitoring system under12 gps device",
-    "Corporate": "strategy privacy transparency annual report corporate risk",
-    "Stats": "statistics datasets quality assessment landings data",
-    "Comms": "communications newsletter press announcements media sea views",
-    "Funding": "funding grants seafood fund emff mff financial support",
-    "Global Marine Team": "blue belt overseas territory conservation international",
+    "Compliance": "compliance enforcement offences fines inspection illegal logbooks catch record sale notes",
+    "FVL": "fishing vessel licence under10 over10 registration capacity permit",
+    "Marine Planning": "marine planning regional plans seascape spatial plan spp",
+    "IUU": "illegal unreported unregulated iuu catch certificate processing statement storage export",
+    "SIA": "single issuance authority foreign vessel permit eu waters authorisation",
+    "Planning Team": "coastal concordat plan development workshops decision making",
+    "Conservative team": "protected area mpa mcz wildlife byelaw conservation species",
+    "OMT": "operations coastal daily management monitoring ivms vessel monitoring gps positioning vms ais",
+    "Corporate": "strategy privacy transparency annual reports corporate risk",
+    "Stats": "statistics datasets landings analysis quality assessment",
+    "Comms": "communications newsletter press announcement media",
+    "Funding": "funding grants seafood fund emff mff",
+    "Global Marine Team": "blue belt overseas territory marine conservation international",
     "FMT": "fisheries management team quota landing obligation discard ban",
     "FDST": "data systems ers logbooks sales notes data collection",
-    "Marine Licensing": "marine licence dredging construction disposal impact assessment"
+    "Marine Licensing": "licence dredging construction disposal impact assessment"
 }
+
 
 # Short labels only (better BART confidence)
 candidate_labels = list(mmo_lexicon.keys())
@@ -72,7 +71,7 @@ print("[INFO] Candidate labels loaded:", candidate_labels)
 
 
 # ============================================================
-# 2. GOV.UK SCRAPER
+#=================== 2. GOV.UK SCRAPER ======================#
 # ============================================================
 def get_gov_summary(url, max_chars=2000):
     """
@@ -151,7 +150,7 @@ def get_gov_summary(url, max_chars=2000):
 
 
 # ============================================================
-# 3. SUMMARY CACHE (URL → Summary)
+#============ 3. SUMMARY CACHE (URL Summary) ================#
 # ============================================================
 def _dbfs_exists(path: str) -> bool:
     """Check existence of a DBFS file by probing /dbfs mirror."""
@@ -192,8 +191,10 @@ def get_gov_summary_cached(url, max_chars=2000):
 
 
 # ============================================================
-# 4. LOAD PARQUET AND BUILD Text_For_Model (with caching)
+# ============== 4. Load MMO Parquet ========================#
+#===========scrape with cache, build Text_For_Model==========#
 # ============================================================
+
 print("[INFO] Loading MMO parquet...")
 df = spark.read.parquet(INPUT_PARQUET)
 
@@ -340,7 +341,7 @@ def classify_bart_udf(texts: pd.Series) -> pd.DataFrame:
 
 
 # ============================================================
-# 6. EXECUTE CLASSIFIER + SAVE RESULTS
+#===========6. EXECUTE CLASSIFIER + SAVE RESULTS=============#
 # ============================================================
 print("\n[INFO] Running full document classification...")
 

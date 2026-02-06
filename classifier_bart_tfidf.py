@@ -1,7 +1,12 @@
+# ============================================================
+# MMO DOCUMENT CLASSIFICATION PIPELINE - Using BART‑ONLY, TF-IDF and CACHING
+# - Short labels
+# - Structured outputs
+# - Relaxed thresholds
+# - Review flags
+# - Persistent GOV.UK URL→Summary cache
+# ============================================================
 
-# ============================================================
-# MMO GOV.UK DOCUMENT CLASSIFICATION PIPELINE - Usign  BART TF-IDF and Caching
-# ============================================================
 
 import os
 from datetime import datetime
@@ -29,7 +34,7 @@ except Exception:
 
 
 # ============================================================
-# 0. CONFIG: Paths (adjust if needed)
+#================== 0. CONFIG: Paths ========================#
 # ============================================================
 INPUT_PARQUET = (
     "/mnt/lab/unrestricted/muhammed.njie@marinemanagement.org.uk/published/"
@@ -51,18 +56,17 @@ print("[INFO] Cache parquet :", CACHE_PATH)
 
 
 # ============================================================
-# 1. MMO Domain Lexicon (Short labels only)
+#================== 1. MMO Domain Lexicon ===================#
 # ============================================================
 mmo_lexicon = {
-    "Compliance": "compliance enforcement offences fines inspection illegal logbooks catch record",
+    "Compliance": "compliance enforcement offences fines inspection illegal logbooks catch record sales note",
     "FVL": "fishing vessel licence under10 over10 registration capacity permit",
     "Marine Planning": "marine planning regional plans seascape spatial plan spp",
     "IUU": "illegal unreported unregulated iuu catch certificate processing statement storage export",
     "SIA": "single issuance authority foreign vessel permit eu waters authorisation",
     "Planning Team": "coastal concordat plan development workshops decision making",
     "Conservative team": "protected area mpa mcz wildlife byelaw conservation species",
-    "OMT": "operations coastal daily management monitoring enforcement",
-    "IVMS": "ivms vessel monitoring gps tracking under12 system",
+    "OMT": "operations coastal daily management monitoring ivms vessel monitoring gps positioning vms ais",
     "Corporate": "strategy privacy transparency annual reports corporate risk",
     "Stats": "statistics datasets landings analysis quality assessment",
     "Comms": "communications newsletter press announcement media",
@@ -78,7 +82,7 @@ print("[INFO] Using short candidate labels:", candidate_labels)
 
 
 # ============================================================
-# 2. GOV.UK SCRAPER
+#=================== 2. GOV.UK SCRAPER ======================#
 # ============================================================
 def get_gov_summary(url, max_chars=2000):
     print(f"[SCRAPER] Fetching URL: {url}")
@@ -150,7 +154,7 @@ def get_gov_summary(url, max_chars=2000):
 
 
 # ============================================================
-# 3. SUMMARY CACHE (URL → Summary)
+#============ 3. SUMMARY CACHE (URL Summary) ================#
 # ============================================================
 def _dbfs_exists(path: str) -> bool:
     """Check existence of a DBFS file by probing /dbfs mirror."""
@@ -191,7 +195,8 @@ def get_gov_summary_cached(url, max_chars=2000):
 
 
 # ============================================================
-# 4. Load MMO Parquet, scrape with cache, and build Text_For_Model
+# ============== 4. Load MMO Parquet ========================#
+#===========scrape with cache, build Text_For_Model==========#
 # ============================================================
 print("[INFO] Loading MMO parquet...")
 df = spark.read.parquet(INPUT_PARQUET)
@@ -214,8 +219,9 @@ pdf["Raw_Text"] = (
 
 
 # ============================================================
-# 5. TF‑IDF Sentence Reducer
+#============= 5. TF‑IDF Sentence Reducer ===================#
 # ============================================================
+
 _SENT_SPLIT_RE = re.compile(r'[.!?]\s+(?=[A-Z])')
 
 def split_sentences(text):
@@ -299,7 +305,8 @@ spark_df = spark.createDataFrame(pdf.drop(columns=["Raw_Text"]))
 
 
 # ============================================================
-# 6. BART Classifier (Structured Outputs + Review Flags + Verbose Logs)
+# ================= 6. BART Classifier ======================#
+# ====Structured Outputs + Review Flags + Verbose Logs== ======#
 # ============================================================
 MIN_CONF = 0.30
 MARGIN_THRESHOLD = 0.05
@@ -394,7 +401,7 @@ def classify_bart_udf(texts: pd.Series) -> pd.DataFrame:
 
 
 # ============================================================
-# 7. EXECUTE CLASSIFIER + SAVE RESULTS
+# ========== 7. EXECUTE CLASSIFIER + SAVE RESULTS ==========#
 # ============================================================
 print("\n[INFO] Running full document classification...")
 
